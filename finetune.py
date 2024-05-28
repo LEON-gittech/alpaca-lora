@@ -17,7 +17,7 @@ from peft import (
     LoraConfig,
     get_peft_model,
     get_peft_model_state_dict,
-    prepare_model_for_int8_training,
+    prepare_model_for_kbit_training,
     set_peft_model_state_dict,
 )
 from transformers import LlamaForCausalLM, LlamaTokenizer
@@ -171,7 +171,7 @@ def train(
             ]  # could be sped up, probably
         return tokenized_full_prompt
 
-    model = prepare_model_for_int8_training(model)
+    model = prepare_model_for_kbit_training(model)
 
     config = LoraConfig(
         r=lora_r,
@@ -185,6 +185,8 @@ def train(
 
     if data_path.endswith(".json") or data_path.endswith(".jsonl"):
         data = load_dataset("json", data_files=data_path)
+    elif data_path.endswith(".parquet"):
+        data = load_dataset("parquet", data_files=data_path)
     else:
         data = load_dataset(data_path)
 
@@ -269,8 +271,9 @@ def train(
 
     if torch.__version__ >= "2" and sys.platform != "win32":
         model = torch.compile(model)
-
-    trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        
+    with torch.autocast("cuda"): 
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
     model.save_pretrained(output_dir)
 
