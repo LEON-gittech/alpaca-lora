@@ -146,11 +146,19 @@ def train(
         return result
 
     def generate_and_tokenize_prompt(data_point):
-        full_prompt = prompter.generate_prompt(
-            data_point["instruction"],
-            data_point["input"],
-            data_point["output"],
-        )
+        if "input" in data_point.keys():
+            full_prompt = prompter.generate_prompt(
+                data_point["instruction"],
+                data_point["input"],
+                data_point["output"],
+            )
+        else:
+            full_prompt = prompter.generate_prompt(
+                data_point["instruction"],
+                None,
+                data_point["output"],
+            )
+
         tokenized_full_prompt = tokenize(full_prompt)
         if not train_on_inputs:
             user_prompt = prompter.generate_prompt(
@@ -271,7 +279,7 @@ def train(
 
     if torch.__version__ >= "2" and sys.platform != "win32":
         model = torch.compile(model)
-        
+
     with torch.autocast("cuda"): 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
