@@ -24,6 +24,21 @@ from transformers import LlamaForCausalLM, LlamaTokenizer
 
 from utils.prompter import Prompter
 
+from accelerate import PartialState
+# device_string = PartialState().process_index
+PROMPT_DICT_ALPACA = {
+    "prompt_input": (
+        "Below is an instruction that describes a task, paired with an input that provides further context. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:"
+    ),
+    "prompt_no_input": (
+        "Below is an instruction that describes a task. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Response:"
+    ),
+}
+prompt_input, prompt_no_input = PROMPT_DICT_ALPACA["prompt_input"], PROMPT_DICT_ALPACA["prompt_no_input"]
 
 def train(
     # model/data params
@@ -91,6 +106,7 @@ def train(
     prompter = Prompter(prompt_template_name)
 
     device_map = "auto"
+    # device_map={'':device_string}
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
     if ddp:
@@ -121,7 +137,7 @@ def train(
     tokenizer.pad_token_id = (
         0  # unk. we want this to be different from the eos token
     )
-    tokenizer.padding_side = "left"  # Allow batched inference
+    tokenizer.padding_side = "right"  # Allow batched inference
 
     def tokenize(prompt, add_eos_token=True):
         # there's probably a way to do this with the tokenizer settings
@@ -146,18 +162,24 @@ def train(
         return result
 
     def generate_and_tokenize_prompt(data_point):
+        # if "input" in data_point.keys():
+        #     full_prompt = prompter.generate_prompt(
+        #         data_point["instruction"],
+        #         data_point["input"],
+        #         data_point["output"],
+        #     )
+        # else:
+        #     full_prompt = prompter.generate_prompt(
+        #         data_point["instruction"],
+        #         None,
+        #         data_point["output"],
+        #     )
+
         if "input" in data_point.keys():
-            full_prompt = prompter.generate_prompt(
-                data_point["instruction"],
-                data_point["input"],
-                data_point["output"],
-            )
+            full_prompt = prompt_input.format_map({"instruction":data_point["instruction"], 'input':data_point["input"]})
         else:
-            full_prompt = prompter.generate_prompt(
-                data_point["instruction"],
-                None,
-                data_point["output"],
-            )
+            full_prompt = prompt_no_input.format_map({"instruction":data_point["instruction"]})
+        print(full_prompt)
 
         tokenized_full_prompt = tokenize(full_prompt)
         if not train_on_inputs:
@@ -238,7 +260,7 @@ def train(
         # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
         model.is_parallelizable = True
         model.model_parallel = True
-
+    
     trainer = transformers.Trainer(
         model=model,
         train_dataset=train_data,
@@ -246,7 +268,7 @@ def train(
         args=transformers.TrainingArguments(
             per_device_train_batch_size=micro_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
-            warmup_steps=100,
+            warmup_steps=0,
             num_train_epochs=num_epochs,
             learning_rate=learning_rate,
             fp16=True,
@@ -270,15 +292,15 @@ def train(
     )
     model.config.use_cache = False
 
-    old_state_dict = model.state_dict
-    model.state_dict = (
-        lambda self, *_, **__: get_peft_model_state_dict(
-            self, old_state_dict()
-        )
-    ).__get__(model, type(model))
+    # old_state_dict = model.state_dict
+    # model.state_dict = (
+    #     lambda self, *_, **__: get_peft_model_state_dict(
+    #         self, old_state_dict()
+    #     )
+    # ).__get__(model, type(model))
 
-    if torch.__version__ >= "2" and sys.platform != "win32":
-        model = torch.compile(model)
+    # if torch.__version__ >= "2" and sys.platform != "win32":
+    #     model = torch.compile(model)
 
     with torch.autocast("cuda"): 
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
