@@ -162,24 +162,24 @@ def train(
         return result
 
     def generate_and_tokenize_prompt(data_point):
-        # if "input" in data_point.keys():
-        #     full_prompt = prompter.generate_prompt(
-        #         data_point["instruction"],
-        #         data_point["input"],
-        #         data_point["output"],
-        #     )
-        # else:
-        #     full_prompt = prompter.generate_prompt(
-        #         data_point["instruction"],
-        #         None,
-        #         data_point["output"],
-        #     )
-
         if "input" in data_point.keys():
-            full_prompt = prompt_input.format_map({"instruction":data_point["instruction"], 'input':data_point["input"]})
+            full_prompt = prompter.generate_prompt(
+                data_point["instruction"],
+                data_point["input"],
+                data_point["output"],
+            )
         else:
-            full_prompt = prompt_no_input.format_map({"instruction":data_point["instruction"]})
-        print(full_prompt)
+            full_prompt = prompter.generate_prompt(
+                data_point["instruction"],
+                None,
+                data_point["output"],
+            )
+
+        # if "input" in data_point.keys():
+        #     full_prompt = prompt_input.format_map({"instruction":data_point["instruction"], 'input':data_point["input"]})
+        # else:
+        #     full_prompt = prompt_no_input.format_map({"instruction":data_point["instruction"]})
+        # print(full_prompt)
 
         tokenized_full_prompt = tokenize(full_prompt)
         if not train_on_inputs:
